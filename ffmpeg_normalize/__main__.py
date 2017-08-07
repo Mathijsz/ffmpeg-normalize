@@ -1,45 +1,5 @@
 #!/usr/bin/env python
-"""
-ffmpeg-normalize 0.7.0
 
-ffmpeg script for normalizing audio.
-
-This program normalizes media files to a certain dB level. The default is an
-RMS-based normalization where the mean is lifted or attenuated. Peak normalization
-is possible with the -m option.
-
-It takes any audio or video file as input, and writes the audio part as
-output WAV file. The normalized audio can also be merged with the
-original.
-
-Usage:
-  ffmpeg-normalize [options] <input-file>...
-
-Options:
-  -l --level <level>                 dB level to normalize to [default: -26]
-  -m --max                           Normalize to the maximum (peak) volume instead of RMS
-  -b --ebu                           Normalize according to EBU R128 (ffmpeg `loudnorm` filter)
-  -t --threshold <threshold>         dB threshold below which the audio will be not adjusted [default: 0.5]
-  -a --acodec <acodec>               Set audio codec for ffmpeg (see `ffmpeg -encoders`) to use for output (will be chosen based on format, default pcm_s16le for WAV)
-  -r --format <format>               Set format for ffmpeg (see `ffmpeg -formats`) to use for output file [default: wav]
-  -e --extra-options <extra-options> Set extra options passed to ffmpeg (e.g. `-b:a 192k` to set audio bitrate)
-  -f --force                         Force overwriting existing files
-  -p --prefix <prefix>               Prefix for normalized files or output folder name [default: normalized]
-  -x --no-prefix                     Write output file without prefix (cannot be used when `--dir` is used)
-  -o --dir                           Create an output folder under the input file's directory with the prefix
-                                     instead of prefixing the file (does not work if `--no-prefix` is chosen)
-  -u --merge                         Take original file's streams and merge the normalized audio. Note: This will not overwrite the input file, but output to `normalized-<input>`.
-  -v --verbose                       Enable verbose output
-  -n --dry-run                       Show what would be done, do not convert
-  -d --debug                         Show debug output
-
-Examples:
-  ffmpeg-normalize -v file.mp3
-  ffmpeg-normalize -v *.avi
-  ffmpeg-normalize -vuofm -l -5 *.mp4
-  ffmpeg-normalize -vu -a libfdk_aac -e "-b:v 192k" *.mkv
-
-"""
 #
 # The MIT License (MIT)
 #
@@ -70,8 +30,7 @@ import sys
 import logging
 import tempfile
 import shlex
-
-from docopt import docopt
+import argparse
 
 from . import __version__
 
@@ -431,28 +390,137 @@ class FFmpegNormalize(object):
 # -------------------------------------------------------------------------------------------------
 
 def main():
-    args = docopt(__doc__, version=str(__version__), options_first=False)
+    #args = docopt(__doc__, version=str(__version__), options_first=False)
 
-    if args['--debug']:
+    parser = argparse.ArgumentParser(
+        prog="ffmpeg_normalize",
+        description="ffmpeg script for normalizing audio",
+        version=str(__version__),
+        conflict_handler="resolve",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    parser.add_argument(
+        "input",
+        nargs="+",
+        help="Input files"
+    )
+
+    parser.add_argument(
+        "-l", "--level",
+        type=float,
+        default=-26.0,
+        help="dB level to normalize to"
+    )
+
+    group_normalization_type = parser.add_mutually_exclusive_group()
+    group_normalization_type.add_argument(
+        "-m", "--max",
+        default=False,
+        action="store_true",
+        help="Normalize to the maximum (peak) volume instead of RMS"
+    )
+    group_normalization_type.add_argument(
+        "-b", "--ebu",
+        default=False,
+        action="store_true",
+        help="Normalize according to EBU R128 (ffmpeg `loudnorm` filter)"
+    )
+
+    parser.add_argument(
+        "-t", "--threshold",
+        type=float,
+        default=0.5,
+        help="dB threshold below which the audio will be not adjusted"
+    )
+    parser.add_argument(
+        "-a", "--acodec",
+        type=str,
+        help="Set audio codec for ffmpeg (see `ffmpeg -encoders`) to use for output (will be chosen based on format, default pcm_s16le for WAV)"
+    )
+    parser.add_argument(
+        "-r", "--format",
+        type=str,
+        default="wav",
+        help="Set format for ffmpeg (see `ffmpeg -formats`) to use for output file"
+    )
+    parser.add_argument(
+        "-e", "--extra-options",
+        type=str,
+        help="Set extra options passed to ffmpeg (e.g. `-b:a 192k` to set audio bitrate)"
+    )
+    parser.add_argument(
+        "-f", "--force",
+        default=False,
+        action="store_true",
+        help="Force overwriting existing files"
+    )
+    parser.add_argument(
+        "-p", "--prefix",
+        type=str,
+        default="normalized",
+        help="Prefix for normalized files or output folder name"
+    )
+
+    group_output = parser.add_mutually_exclusive_group()
+    group_output.add_argument(
+        "-x", "--no-prefix",
+        default=False,
+        action="store_true",
+        help="Write output file without prefix (cannot be used when `--dir` is used)"
+    )
+    group_output.add_argument(
+        "-o", "--dir",
+        help="Create an output folder under the input file's directory with the prefix instead of prefixing the file (does not work if `--no-prefix` is chosen)"
+    )
+
+    parser.add_argument(
+        "-u", "--merge",
+        default=False,
+        action="store_true",
+        help="Take original file's streams and merge the normalized audio. Note: This will not overwrite the input file, but output to `normalized-<input>`."
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        default=False,
+        action="store_true",
+        help="Enable verbose output"
+    )
+    parser.add_argument(
+        "-n", "--dry-run",
+        default=False,
+        action="store_true",
+        help="Show what would be done, do not convert"
+    )
+    parser.add_argument(
+        "-d", "--debug",
+        default=False,
+        action="store_true",
+        help="Show debug output"
+    )
+
+    args = parser.parse_args()
+
+    if args.debug:
         logger.setLevel(logging.DEBUG)
-    elif args['--verbose']:
+    elif args.verbose:
         logger.setLevel(logging.INFO)
 
     ffmpeg_normalize = FFmpegNormalize(
-        input_files=args['<input-file>'],
-        acodec=args['--acodec'],
-        write_to_dir=args['--dir'],
-        dry_run=args['--dry-run'],
-        extra_options=args['--extra-options'],
-        force=args['--force'],
-        output_format=args['--format'],
-        use_max=args['--max'],
-        ebu=args['--ebu'],
-        merge=args['--merge'],
-        no_prefix=args['--no-prefix'],
-        prefix=args['--prefix'],
-        target_level=float(args['--level']),
-        threshold=float(args['--threshold']),
+        input_files=args.input,
+        acodec=args.acodec,
+        write_to_dir=args.dir,
+        dry_run=args.dry_run,
+        extra_options=args.extra_options,
+        force=args.force,
+        output_format=args.format,
+        use_max=args.max,
+        ebu=args.ebu,
+        merge=args.merge,
+        no_prefix=args.no_prefix,
+        prefix=args.prefix,
+        target_level=float(args.level),
+        threshold=float(args.threshold),
     )
     ffmpeg_normalize.run()
 
